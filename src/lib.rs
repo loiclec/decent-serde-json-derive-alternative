@@ -139,7 +139,10 @@ fn derive_to_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
 fn derive_from_json_struct(parsed_struct: parser::Struct, tb: &mut TokenBuilder) {
     let from_json = ts!(":: decent_serde_json_alternative :: FromJson");
     let json_value = ts!(":: json :: JsonValue ");
-    
+    let option = ts!(":: std :: option :: Option");
+    let some = ts!(option ":: Some");
+    let none = ts!(option ":: None");
+
     let mut where_clause_in_impl_from = parsed_struct.where_clause.clone().unwrap_or_else(|| WhereClause::default());
     
     for ty in &parsed_struct.generics.type_params {
@@ -153,10 +156,10 @@ fn derive_from_json_struct(parsed_struct: parser::Struct, tb: &mut TokenBuilder)
     extend_ts!(tb,
         "impl" parsed_struct.generics.removing_eq_type() from_json "for" parsed_struct.ident parsed_struct.generics.removing_bounds_and_eq_type() where_clause_in_impl_from 
         "{
-            fn from_json ( fromjson : & " json_value " ) -> Option < Self > {
+            fn from_json ( fromjson : & " json_value " ) -> " option " < Self > {
                 if let " json_value " :: Object ( o ) = fromjson {"
                     join_ts!(&parsed_struct.struct_fields, f, 
-                        "let mut" f.safe_ident() "= None ;"
+                        "let mut" f.safe_ident() "= " none " ;"
                     )
                     "for ( key , value ) in o . iter ( ) {
                         match key {
@@ -165,7 +168,7 @@ fn derive_from_json_struct(parsed_struct: parser::Struct, tb: &mut TokenBuilder)
                             let literal_key = Literal::string(&f.access().to_string());
                             ts!(
                             literal_key " => {"
-                                f.safe_ident() " = Some ( < _ > :: from_json ( value ) ? ) ;" 
+                                f.safe_ident() " = " some " ( < _ > :: from_json ( value ) ? ) ;" 
                             "
                             }"
                             )
@@ -177,14 +180,13 @@ fn derive_from_json_struct(parsed_struct: parser::Struct, tb: &mut TokenBuilder)
                     join_ts!(&parsed_struct.struct_fields, f, 
                         "let" f.safe_ident() "=" f.safe_ident() "? ;"
                     )
-
-                    "Some ( Self {"
+                    some " ( Self {"
                         join_ts!(&parsed_struct.struct_fields, f, 
                             f.access() ":" f.safe_ident()
                         , separator: ",")
                     "} )"
                 "} else {
-                    None
+                    " none "
                 }
                 "
             "}
@@ -195,7 +197,9 @@ fn derive_from_json_struct(parsed_struct: parser::Struct, tb: &mut TokenBuilder)
 fn derive_from_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
     let from_json = ts!(":: decent_serde_json_alternative :: FromJson");
     let json_value = ts!(":: json :: JsonValue ");
-    let json_object = ts!(":: json :: object :: Object");
+    let option = ts!(":: std :: option :: Option");
+    let some = ts!(option ":: Some");
+    let none = ts!(option ":: None");
 
     let mut where_clause_in_impl_from = parsed_enum.where_clause.clone().unwrap_or_else(|| WhereClause::default());
 
@@ -213,9 +217,9 @@ fn derive_from_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
     extend_ts!(tb,
         "impl" parsed_enum.generics.removing_eq_type() from_json "for" parsed_enum.ident parsed_enum.generics.removing_bounds_and_eq_type() where_clause_in_impl_from 
         "{
-            fn from_json ( fromjson : & " json_value " ) -> Option < Self > {
+            fn from_json ( fromjson : & " json_value " ) -> " option " < Self > {
                 if let " json_value " :: Object ( o ) = fromjson {
-                    if ! fromjson . has_key ( " kind_literal " ) { return None }
+                    if ! fromjson . has_key ( " kind_literal " ) { return " none " }
                     let kind = match & o [ " kind_literal " ] {
                         " json_value " :: String ( x ) => {
                             x . clone ( )
@@ -224,7 +228,7 @@ fn derive_from_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
                             x . to_string ( )
                         }
                         _ => {
-                            return None
+                            return " none "
                         }
                     } ;
                     match kind . as_str ( ) {"
@@ -235,12 +239,12 @@ fn derive_from_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
                                 if let Some(fields) = item.get_struct_data().map(|d| d.1) {
                                     ts!(
                                     "if ! fromjson . has_key ( " payload_literal ") {
-                                        return None
+                                        return " none "
                                     }
                                     if let " json_value " :: Object ( o ) = & o [ " payload_literal " ] {"
                                         // TODO: deduplicate this, it is the same logic as for structs
                                         join_ts!(fields, f, 
-                                            "let mut" f.safe_ident() "= None ;"
+                                            "let mut" f.safe_ident() "= " none " ;"
                                         )
                                         "for ( key , value ) in o . iter ( ) {
                                             match key {
@@ -249,7 +253,7 @@ fn derive_from_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
                                                 let literal_key = Literal::string(&f.access().to_string());
                                                 ts!(
                                                 literal_key " => {"
-                                                    f.safe_ident() " = Some ( < _ > :: from_json ( value ) ? ) ;" 
+                                                    f.safe_ident() " = " some " ( < _ > :: from_json ( value ) ? ) ;" 
                                                 "
                                                 }"
                                                 )
@@ -261,28 +265,28 @@ fn derive_from_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
                                         join_ts!(fields, f, 
                                             "let" f.safe_ident() "=" f.safe_ident() "? ;"
                                         )
-                                        "Some ( Self :: " item.ident " {"
+                                        some " ( Self :: " item.ident " {"
                                             join_ts!(fields, f, 
                                                 f.access() ":" f.safe_ident()
                                             , separator: ",")
                                         "} )"
                                     "} else {
-                                        return None
+                                        return " none "
                                     }"
                                     )
                                 } else {
                                     ts!(
-                                    "Some ( Self :: " item.ident " )"
+                                    some "( Self :: " item.ident " )"
                                     )
                                 }
                             "}"
                             )
                         })
                         
-                        "_ => { return None }"
+                        "_ => { return " none " }"
                     "}
                 } else {
-                    return None
+                    return " none "
                 }
             }
         }"

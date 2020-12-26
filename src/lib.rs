@@ -33,7 +33,6 @@ pub fn derive_from_json(input: proc_macro::TokenStream) -> proc_macro::TokenStre
         )
     }
     let ts = tb.end();
-    eprintln!("{}", ts);
     ts.into()
 }
 
@@ -62,6 +61,8 @@ pub fn derive_to_json(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 
 fn derive_to_json_struct(parsed_struct: parser::Struct, tb: &mut TokenBuilder) {
     let to_json = ts!(":: decent_serde_json_alternative :: ToJson");
+    let json_value = ts!(":: json :: JsonValue ");
+    let json_object = ts!(":: json :: object :: Object");
 
     let mut where_clause_in_impl_from = parsed_struct.where_clause.clone().unwrap_or_else(|| WhereClause::default());
     
@@ -72,23 +73,18 @@ fn derive_to_json_struct(parsed_struct: parser::Struct, tb: &mut TokenBuilder) {
             rhs: to_json.clone(),
         })
     }
-    /*
-        let mut object = :: json :: object :: Object :: new () ;
-        object . insert ( "field1" , self . field1 . to_json ( ) ) ;
-        object . insert ( "field2" , self . field2 . to_json ( ) ) ;
-        :: json :: JsonValue :: Object ( object )
-    */
+
     extend_ts!(tb,
     "impl" parsed_struct.generics.removing_eq_type() to_json "for" parsed_struct.ident parsed_struct.generics.removing_bounds_and_eq_type() where_clause_in_impl_from 
     "{
-        fn to_json ( & self )  -> :: json :: JsonValue {
-            let mut object = :: json :: object :: Object :: new ( ) ;
+        fn to_json ( & self )  ->" json_value " {
+            let mut object = " json_object " :: new ( ) ;
             "
             join_ts!(parsed_struct.struct_fields, f, 
                 "object . insert ( " Literal::string(&f.access().to_string()) ", self . " f.access() " . to_json ( ) ) ;"
             )
             "
-            :: json :: JsonValue :: Object ( object )
+            " json_value " :: Object ( object )
         }
     }"
     )
@@ -96,6 +92,8 @@ fn derive_to_json_struct(parsed_struct: parser::Struct, tb: &mut TokenBuilder) {
 
 fn derive_to_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
     let to_json = ts!(":: decent_serde_json_alternative :: ToJson");
+    let json_value = ts!(":: json :: JsonValue ");
+    let json_object = ts!(":: json :: object :: Object");
 
     let mut where_clause_in_impl_from = parsed_enum.where_clause.clone().unwrap_or_else(|| WhereClause::default());
     
@@ -106,36 +104,31 @@ fn derive_to_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
             rhs: to_json.clone(),
         })
     }
-    /*
-        let mut object = :: json :: object :: Object :: new () ;
-        object . insert ( "field1" , self . field1 . to_json ( ) ) ;
-        object . insert ( "field2" , self . field2 . to_json ( ) ) ;
-        :: json :: JsonValue :: Object ( object )
-    */
+
     extend_ts!(tb,
     "# [ allow ( non_shorthand_field_patterns ) ]"
     "impl" parsed_enum.generics.removing_eq_type() to_json "for" parsed_enum.ident parsed_enum.generics.removing_bounds_and_eq_type() where_clause_in_impl_from 
     "{
-        fn to_json ( & self )  -> :: json :: JsonValue {
-            let mut object = :: json :: object :: Object :: new ( ) ;
+        fn to_json ( & self )  -> " json_value " {
+            let mut object = " json_object " :: new ( ) ;
             match self {"
             join_ts!(parsed_enum.items, item,
                 item.pattern_match(&parsed_enum.ident, None) "=> {"
-                    "object . insert ( " Literal::string("kind") ", :: json :: JsonValue :: String ("  Literal::string(&item.ident.to_string()) " . to_string ( ) ) ) ;"
+                    "object . insert ( " Literal::string("kind") ", " json_value " :: String ("  Literal::string(&item.ident.to_string()) " . to_string ( ) ) ) ;"
                     if let Some(fields) = item.get_struct_data().map(|d| d.1) {
                         ts!("
-                            let mut payload = :: json :: object :: Object :: new ( ) ;
+                            let mut payload = " json_object " :: new ( ) ;
                             "
                             join_ts!(fields, f, 
                                 "payload . insert ( " Literal::string(&f.access().to_string()) "," f.safe_ident() " . to_json ( ) ) ;"
                             )
-                            "object . insert ( " Literal::string("payload") " , :: json :: JsonValue :: Object ( payload ) ) ; "
+                            "object . insert ( " Literal::string("payload") " , " json_value " :: Object ( payload ) ) ; "
                         )
                     } else {
                         ts!()
                     }
                     "
-                    :: json :: JsonValue :: Object ( object )
+                    " json_value " :: Object ( object )
                 }"
             )
             "}
@@ -145,7 +138,8 @@ fn derive_to_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
 
 fn derive_from_json_struct(parsed_struct: parser::Struct, tb: &mut TokenBuilder) {
     let from_json = ts!(":: decent_serde_json_alternative :: FromJson");
-
+    let json_value = ts!(":: json :: JsonValue ");
+    
     let mut where_clause_in_impl_from = parsed_struct.where_clause.clone().unwrap_or_else(|| WhereClause::default());
     
     for ty in &parsed_struct.generics.type_params {
@@ -156,33 +150,11 @@ fn derive_from_json_struct(parsed_struct: parser::Struct, tb: &mut TokenBuilder)
         })
     }
 
-    /*
-    let mut field1 = None;
-    let mut field2 = None;
-    for (key, value) in o.iter() {
-        match key {
-            "field1" => {
-                field1 = Some(<_>::from_json(value)?);
-            }
-            "field2" => {
-                field2 = Some(<_>::from_json(value)?);
-            }
-            _ => { }
-        }
-    }
-    let field1 = field1?;
-    let field2 = field2?;
-
-    Some ( Self {
-        field1: field1,
-        field2: field2,
-    } )
-    */
     extend_ts!(tb,
         "impl" parsed_struct.generics.removing_eq_type() from_json "for" parsed_struct.ident parsed_struct.generics.removing_bounds_and_eq_type() where_clause_in_impl_from 
         "{
-            fn from_json ( fromjson : & json :: JsonValue ) -> Option < Self > {
-                if let :: json :: JsonValue :: Object ( o ) = fromjson {"
+            fn from_json ( fromjson : & " json_value " ) -> Option < Self > {
+                if let " json_value " :: Object ( o ) = fromjson {"
                     join_ts!(&parsed_struct.struct_fields, f, 
                         "let mut" f.safe_ident() "= None ;"
                     )
@@ -220,17 +192,10 @@ fn derive_from_json_struct(parsed_struct: parser::Struct, tb: &mut TokenBuilder)
     )
 }
 
-/*
-{
-    kind: "VariantA",
-    payload: {
-        ...
-    }
-}
-*/
-
 fn derive_from_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
     let from_json = ts!(":: decent_serde_json_alternative :: FromJson");
+    let json_value = ts!(":: json :: JsonValue ");
+    let json_object = ts!(":: json :: object :: Object");
 
     let mut where_clause_in_impl_from = parsed_enum.where_clause.clone().unwrap_or_else(|| WhereClause::default());
 
@@ -242,73 +207,20 @@ fn derive_from_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
         })
     }
 
-    /*
-    if let ::json::JsonValue(Object(o)) = fromjson {
-        if ! o . has_key ( "kind" ) { return None }
-        let kind = match o["kind"] {
-            JsonValue::String(x) => {
-                x
-            }
-            JsonValue::Short(x) =>{
-                x.to_string()
-            }
-        };
-        match kind {
-            "Variant1" => {
-                if !o.has_key("payload") {
-                    return None
-                }
-                if let JsonValue::Object(payload) = o["payload"] {
-                    let mut field1 = None;
-                    let mut field2 = None;
-                    for (key, value) in payload.iter() {
-                        match key {
-                            "field1" => {
-                                field1 = Some(<_>::from_json(value)?);
-                            }
-                            "field2" => {
-                                field2 = Some(<_>::from_json(value)?);
-                            }
-                            _ => { }
-                        }
-                    }
-                    let field1 = field1?;
-                    let field2 = field2?;
-
-                    Some ( Self::Variant1 {
-                        field1: field1,
-                        field2: field2,
-                    } )
-                } else {
-                    return None
-                }
-            }
-            "Variant2" => {
-                Some(Self::Variant2)
-            }
-            _ => {
-                return None
-            }
-        }
-    } else {
-        return None
-    }
-    */
-
     let kind_literal = Literal::string("kind");
     let payload_literal = Literal::string("payload");
 
     extend_ts!(tb,
         "impl" parsed_enum.generics.removing_eq_type() from_json "for" parsed_enum.ident parsed_enum.generics.removing_bounds_and_eq_type() where_clause_in_impl_from 
         "{
-            fn from_json ( fromjson : & json :: JsonValue ) -> Option < Self > {
-                if let :: json :: JsonValue :: Object ( o ) = fromjson {
+            fn from_json ( fromjson : & " json_value " ) -> Option < Self > {
+                if let " json_value " :: Object ( o ) = fromjson {
                     if ! fromjson . has_key ( " kind_literal " ) { return None }
                     let kind = match & o [ " kind_literal " ] {
-                        :: json :: JsonValue :: String ( x ) => {
+                        " json_value " :: String ( x ) => {
                             x . clone ( )
                         }
-                        :: json :: JsonValue :: Short ( x ) => {
+                        " json_value " :: Short ( x ) => {
                             x . to_string ( )
                         }
                         _ => {
@@ -325,7 +237,7 @@ fn derive_from_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
                                     "if ! fromjson . has_key ( " payload_literal ") {
                                         return None
                                     }
-                                    if let :: json :: JsonValue :: Object ( o ) = & o [ " payload_literal " ] {"
+                                    if let " json_value " :: Object ( o ) = & o [ " payload_literal " ] {"
                                         // TODO: deduplicate this, it is the same logic as for structs
                                         join_ts!(fields, f, 
                                             "let mut" f.safe_ident() "= None ;"
@@ -368,41 +280,6 @@ fn derive_from_json_enum(parsed_enum: parser::Enum, tb: &mut TokenBuilder) {
                         })
                         
                         "_ => { return None }"
-                        // "Variant1" => {
-                        //     if !o.has_key("payload") {
-                        //         return None
-                        //     }
-                        //     if let JsonValue::Object(payload) = o["payload"] {
-                        //         let mut field1 = None;
-                        //         let mut field2 = None;
-                        //         for (key, value) in payload.iter() {
-                        //             match key {
-                        //                 "field1" => {
-                        //                     field1 = Some(<_>::from_json(value)?);
-                        //                 }
-                        //                 "field2" => {
-                        //                     field2 = Some(<_>::from_json(value)?);
-                        //                 }
-                        //                 _ => { }
-                        //             }
-                        //         }
-                        //         let field1 = field1?;
-                        //         let field2 = field2?;
-            
-                        //         Some ( Self::Variant1 {
-                        //             field1: field1,
-                        //             field2: field2,
-                        //         } )
-                        //     } else {
-                        //         return None
-                        //     }
-                        // }
-                        // "Variant2" => {
-                        //     Some(Self::Variant2)
-                        // }
-                        // _ => {
-                        //     return None
-                        // }
                     "}
                 } else {
                     return None
